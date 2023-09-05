@@ -13,11 +13,8 @@ class RunModelByCameraDemo extends StatefulWidget {
 }
 
 class _RunModelByCameraDemoState extends State<RunModelByCameraDemo> {
-  List<ResultObjectDetection>? results;
-  Duration? objectDetectionInferenceTime;
-
+  List<ResultObjectDetection?>? results;
   String? classification;
-  Duration? classificationInferenceTime;
 
   /// Scaffold Key
   GlobalKey<ScaffoldState> scaffoldKey = GlobalKey();
@@ -74,21 +71,17 @@ class _RunModelByCameraDemoState extends State<RunModelByCameraDemo> {
                       children: [
                         const Icon(Icons.keyboard_arrow_up,
                             size: 48, color: Colors.orange),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Column(
-                            children: [
-                              if (classification != null)
-                                StatsRow('Classification:', '$classification'),
-                              if (classificationInferenceTime != null)
-                                StatsRow('Classification Inference time:',
-                                    '${classificationInferenceTime?.inMilliseconds} ms'),
-                              if (objectDetectionInferenceTime != null)
-                                StatsRow('Object Detection Inference time:',
-                                    '${objectDetectionInferenceTime?.inMilliseconds} ms'),
-                            ],
-                          ),
-                        )
+                        (classification != null)
+                            ? Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
+                                  children: [
+                                    StatsRow(
+                                        'Classification:', '$classification'),
+                                  ],
+                                ),
+                              )
+                            : Container()
                       ],
                     ),
                   ),
@@ -102,46 +95,42 @@ class _RunModelByCameraDemoState extends State<RunModelByCameraDemo> {
   }
 
   /// Returns Stack of bounding boxes
-  Widget boundingBoxes2(List<ResultObjectDetection>? results) {
+  Widget boundingBoxes2(List<ResultObjectDetection?>? results) {
     if (results == null) {
       return Container();
     }
     return Stack(
-      children: results.map((e) => BoxWidget(result: e)).toList(),
+      children: results.map((e) => BoxWidget(result: e!)).toList(),
     );
   }
 
-  void resultsCallback(
-      List<ResultObjectDetection> results, Duration inferenceTime) {
+  void resultsCallback(List<ResultObjectDetection?> results) {
     if (!mounted) {
       return;
     }
     setState(() {
       this.results = results;
-      objectDetectionInferenceTime = inferenceTime;
       for (var element in results) {
         print({
           "rect": {
-            "left": element.rect.left,
-            "top": element.rect.top,
-            "width": element.rect.width,
-            "height": element.rect.height,
-            "right": element.rect.right,
-            "bottom": element.rect.bottom,
+            "left": element?.rect.left,
+            "top": element?.rect.top,
+            "width": element?.rect.width,
+            "height": element?.rect.height,
+            "right": element?.rect.right,
+            "bottom": element?.rect.bottom,
           },
         });
       }
     });
   }
 
-  void resultsCallbackClassification(
-      String classification, Duration inferenceTime) {
+  void resultsCallbackClassification(String classification) {
     if (!mounted) {
       return;
     }
     setState(() {
       this.classification = classification;
-      classificationInferenceTime = inferenceTime;
     });
   }
 
@@ -152,24 +141,18 @@ class _RunModelByCameraDemoState extends State<RunModelByCameraDemo> {
 
 /// Row for one Stats field
 class StatsRow extends StatelessWidget {
-  final String title;
-  final String value;
+  final String left;
+  final String right;
 
-  const StatsRow(this.title, this.value, {Key? key}) : super(key: key);
+  const StatsRow(this.left, this.right, {Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
-      child: Column(
-        // mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          Text(value)
-        ],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [Text(left), Text(right)],
       ),
     );
   }

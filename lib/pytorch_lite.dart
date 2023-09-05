@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
@@ -13,6 +12,7 @@ import 'package:pytorch_lite/native_wrapper.dart';
 import 'package:pytorch_lite/post_processor.dart';
 
 export 'enums/dtype.dart';
+export 'utils.dart';
 export 'classes/rect.dart';
 export 'classes/result_object_detection.dart';
 export 'enums/model_type.dart';
@@ -52,7 +52,7 @@ class PytorchLite {
 
   ///Sets pytorch model path and returns Model
   static Future<ClassificationModel> loadClassificationModel(
-      String path, int imageWidth, int imageHeight, int numberOfClasses,
+      String path, int imageWidth, int imageHeight,int numberOfClasses,
       {String? labelPath}) async {
     String absPathModelPath = await _getAbsolutePath(path);
 
@@ -67,8 +67,7 @@ class PytorchLite {
       }
     }
 
-    return ClassificationModel(
-        index, labels, imageWidth, imageHeight, numberOfClasses);
+    return ClassificationModel(index, labels, imageWidth, imageHeight,numberOfClasses);
   }
 
   ///Sets pytorch object detection model (path and lables) and returns Model
@@ -137,51 +136,8 @@ class ClassificationModel {
   final int imageWidth;
   final int imageHeight;
   final int numberOfClasses;
-  ClassificationModel(this._index, this.labels, this.imageWidth,
-      this.imageHeight, this.numberOfClasses);
-
-  int softMax(List<double?> prediction) {
-    double maxScore = double.negativeInfinity;
-    int maxScoreIndex = -1;
-    for (int i = 0; i < prediction.length; i++) {
-      if (prediction[i]! > maxScore) {
-        maxScore = prediction[i]!;
-        maxScoreIndex = i;
-      }
-    }
-    return maxScoreIndex;
-  }
-
-  List<double> getProbabilities(
-    List<double> prediction,
-  ) {
-    List<double> predictionProbabilities = [];
-    //Getting sum of exp
-    double? sumExp;
-    for (var element in prediction) {
-      if (sumExp == null) {
-        sumExp = exp(element);
-      } else {
-        sumExp = sumExp + exp(element);
-      }
-    }
-    for (var element in prediction) {
-      predictionProbabilities.add(exp(element) / sumExp!);
-    }
-    return predictionProbabilities;
-  }
-
-  ///predicts image but returns the raw net output
-  Future<List<double>> getImagePredictionList(Uint8List imageAsBytes,
-      {List<double> mean = torchVisionNormMeanRGB,
-      List<double> std = torchVisionNormSTDRGB}) async {
-    // Assert mean std
-    assert(mean.length == 3, "Mean should have size of 3");
-    assert(std.length == 3, "STD should have size of 3");
-
-    return await PytorchFfi.imageModelInference(_index, imageAsBytes,
-        imageHeight, imageWidth, mean, std, false, numberOfClasses);
-  }
+  ClassificationModel(
+      this._index, this.labels, this.imageWidth, this.imageHeight,this.numberOfClasses);
 
   ///predicts image and returns the supposed label belonging to it
   Future<String> getImagePrediction(Uint8List imageAsBytes,
@@ -194,13 +150,33 @@ class ClassificationModel {
     final List<double?> prediction =
         await getImagePredictionList(imageAsBytes, mean: mean, std: std);
 
-    int maxScoreIndex = softMax(prediction);
+    double maxScore = double.negativeInfinity;
+    int maxScoreIndex = -1;
+    for (int i = 0; i < prediction.length; i++) {
+      if (prediction[i]! > maxScore) {
+        maxScore = prediction[i]!;
+        maxScoreIndex = i;
+      }
+    }
+    // free(dataPointer);
     return labels[maxScoreIndex];
+  }
+
+  ///predicts image but returns the raw net output
+  Future<List<double>> getImagePredictionList(Uint8List imageAsBytes,
+      {List<double> mean = torchVisionNormMeanRGB,
+      List<double> std = torchVisionNormSTDRGB}) async {
+    // Assert mean std
+    assert(mean.length == 3, "Mean should have size of 3");
+    assert(std.length == 3, "STD should have size of 3");
+
+    return await PytorchFfi.imageModelInference(
+        _index, imageAsBytes, imageHeight, imageWidth, mean, std, false,numberOfClasses);
   }
 
   ///predicts image but returns the output as probabilities
   ///[image] takes the File of the image
-  Future<List<double>?> getImagePredictionListProbabilities(
+  Future<List<double?>?> getImagePredictionListProbabilities(
       Uint8List imageAsBytes,
       {List<double> mean = torchVisionNormMeanRGB,
       List<double> std = torchVisionNormSTDRGB}) async {
@@ -209,82 +185,22 @@ class ClassificationModel {
     assert(std.length == 3, "STD should have size of 3");
     List<double> prediction =
         await getImagePredictionList(imageAsBytes, mean: mean, std: std);
+    List<double?> predictionProbabilities = [];
 
     //Getting sum of exp
-    return getProbabilities(prediction);
-  }
-
-  ///predicts image but returns the raw net output
-  Future<List<double>> getCameraImagePredictionList(
-      CameraImage cameraImage, int rotation,
-      {List<double> mean = torchVisionNormMeanRGB,
-      List<double> std = torchVisionNormSTDRGB}) async {
-    // Assert mean std
-    assert(mean.length == 3, "Mean should have size of 3");
-    assert(std.length == 3, "STD should have size of 3");
-
-    // On Android the image format is YUV and we get a buffer per channel,
-    // in iOS the format is BGRA and we get a single buffer for all channels.
-    // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
-    // the entire image
-    var planes = cameraImage.planes;
-    var yBuffer = planes[0].bytes;
-
-    Uint8List? uBuffer;
-    Uint8List? vBuffer;
-
-    if (Platform.isAndroid) {
-      uBuffer = planes[1].bytes;
-      vBuffer = planes[2].bytes;
+    double? sumExp;
+    for (var element in prediction) {
+      if (sumExp == null) {
+        sumExp = exp(element);
+      } else {
+        sumExp = sumExp + exp(element);
+      }
+    }
+    for (var element in prediction) {
+      predictionProbabilities.add(exp(element) / sumExp!);
     }
 
-    return await PytorchFfi.cameraImageModelInference(
-        _index,
-        yBuffer,
-        uBuffer,
-        vBuffer,
-        rotation,
-        imageHeight,
-        imageWidth,
-        cameraImage.height,
-        cameraImage.width,
-        mean,
-        std,
-        false,
-        numberOfClasses);
-  }
-
-  ///predicts image and returns the supposed label belonging to it
-  Future<String> getCameraImagePrediction(CameraImage cameraImage, int rotation,
-      {List<double> mean = torchVisionNormMeanRGB,
-      List<double> std = torchVisionNormSTDRGB}) async {
-    // Assert mean std
-    assert(mean.length == 3, "mean should have size of 3");
-    assert(std.length == 3, "std should have size of 3");
-
-    final List<double?> prediction = await getCameraImagePredictionList(
-        cameraImage, rotation,
-        mean: mean, std: std);
-
-    int maxScoreIndex = softMax(prediction);
-    return labels[maxScoreIndex];
-  }
-
-  ///predicts image but returns the output as probabilities
-  ///[image] takes the File of the image
-  Future<List<double>?> getCameraPredictionListProbabilities(
-      CameraImage cameraImage, int rotation,
-      {List<double> mean = torchVisionNormMeanRGB,
-      List<double> std = torchVisionNormSTDRGB}) async {
-    // Assert mean std
-    assert(mean.length == 3, "Mean should have size of 3");
-    assert(std.length == 3, "STD should have size of 3");
-    final List<double> prediction = await getCameraImagePredictionList(
-        cameraImage, rotation,
-        mean: mean, std: std);
-
-    //Getting sum of exp
-    return getProbabilities(prediction);
+    return predictionProbabilities;
   }
 }
 
@@ -299,36 +215,15 @@ class ModelObjectDetection {
       this.labels, this.postProcessorObjectDetection,
       {this.modelType = ObjectDetectionModelType.yolov5});
 
-  ///predicts image but returns the raw net output
-  Future<List<ResultObjectDetection>> getImagePredictionList(
+  ///predicts image and returns the supposed label belonging to it
+  Future<List<ResultObjectDetection?>> getImagePrediction(
       Uint8List imageAsBytes,
       {double minimumScore = 0.5,
       double iOUThreshold = 0.5,
       int boxesLimit = 10,
       List<double> mean = noMeanRgb,
       List<double> std = noStdRgb}) async {
-    List<ResultObjectDetection> prediction =
-        await PytorchFfi.imageModelInferenceObjectDetection(
-            _index,
-            imageAsBytes,
-            imageHeight,
-            imageWidth,
-            mean,
-            std,
-            modelType == ObjectDetectionModelType.yolov5,
-            postProcessorObjectDetection.modelOutputLength,
-            postProcessorObjectDetection);
-    return prediction;
-  }
-
-  ///predicts image and returns the supposed label belonging to it
-  Future<List<ResultObjectDetection>> getImagePrediction(Uint8List imageAsBytes,
-      {double minimumScore = 0.5,
-      double iOUThreshold = 0.5,
-      int boxesLimit = 10,
-      List<double> mean = noMeanRgb,
-      List<double> std = noStdRgb}) async {
-    List<ResultObjectDetection> prediction = await getImagePredictionList(
+    List<ResultObjectDetection?> prediction = await getImagePredictionList(
         imageAsBytes,
         minimumScore: minimumScore,
         iOUThreshold: iOUThreshold,
@@ -337,75 +232,31 @@ class ModelObjectDetection {
         std: std);
 
     for (var element in prediction) {
-      element.className = labels[element.classIndex];
+      element?.className = labels[element.classIndex];
     }
 
     return prediction;
   }
 
   ///predicts image but returns the raw net output
-  Future<List<ResultObjectDetection>> getCameraImagePredictionList(
-      CameraImage cameraImage, int rotation,
+  Future<List<ResultObjectDetection?>> getImagePredictionList(
+      Uint8List imageAsBytes,
       {double minimumScore = 0.5,
       double iOUThreshold = 0.5,
       int boxesLimit = 10,
       List<double> mean = noMeanRgb,
       List<double> std = noStdRgb}) async {
-    // On Android the image format is YUV and we get a buffer per channel,
-    // in iOS the format is BGRA and we get a single buffer for all channels.
-    // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
-    // the entire image
-    var planes = cameraImage.planes;
-    var yBuffer = planes[0].bytes;
-
-    Uint8List? uBuffer;
-    Uint8List? vBuffer;
-
-    if (Platform.isAndroid) {
-      uBuffer = planes[1].bytes;
-      vBuffer = planes[2].bytes;
-    }
-
-    List<ResultObjectDetection> prediction =
-        await PytorchFfi.cameraImageModelInferenceObjectDetection(
+    List<ResultObjectDetection?> prediction = postProcessorObjectDetection
+        .outputsToNMSPredictions(await PytorchFfi.imageModelInference(
             _index,
-            yBuffer,
-            uBuffer,
-            vBuffer,
-            rotation,
+            imageAsBytes,
             imageHeight,
             imageWidth,
-            cameraImage.height,
-            cameraImage.width,
             mean,
             std,
             modelType == ObjectDetectionModelType.yolov5,
-            postProcessorObjectDetection.modelOutputLength,
-            postProcessorObjectDetection);
-
-    return prediction;
-  }
-
-  ///predicts image and returns the supposed label belonging to it
-  Future<List<ResultObjectDetection>> getCameraImagePrediction(
-      CameraImage cameraImage, int rotation,
-      {double minimumScore = 0.5,
-      double iOUThreshold = 0.5,
-      int boxesLimit = 10,
-      List<double> mean = noMeanRgb,
-      List<double> std = noStdRgb}) async {
-    List<ResultObjectDetection> prediction = await getCameraImagePredictionList(
-        cameraImage, rotation,
-        minimumScore: minimumScore,
-        iOUThreshold: iOUThreshold,
-        boxesLimit: boxesLimit,
-        mean: mean,
-        std: std);
-
-    for (var element in prediction) {
-      element.className = labels[element.classIndex];
-    }
-
+            postProcessorObjectDetection.modelOutputLength
+            ));
     return prediction;
   }
 
@@ -521,4 +372,63 @@ class ModelObjectDetection {
       );
     });
   }
+
+/*
+  ///predicts image and returns the supposed label belonging to it
+  Future<String> getImagePrediction(
+      File image, int width, int height, String labelPath,
+      {List<double> mean = TORCHVISION_NORM_MEAN_RGB,
+      List<double> std = TORCHVISION_NORM_STD_RGB}) async {
+    // Assert mean std
+    assert(mean.length == 3, "mean should have size of 3");
+    assert(std.length == 3, "std should have size of 3");
+
+    List<String> labels = [];
+    if (labelPath.endsWith(".txt")) {
+      labels = await _getLabelsTxt(labelPath);
+    } else {
+      labels = await _getLabelsCsv(labelPath);
+    }
+
+    List byteArray = image.readAsBytesSync();
+    final List? prediction =
+        await _channel.invokeListMethod("predictImage_ObjectDetection", {
+      "index": _index,
+      "image": byteArray,
+      "width": width,
+      "height": height,
+      "mean": mean,
+      "std": std
+    });
+    double maxScore = double.negativeInfinity;
+    int maxScoreIndex = -1;
+    for (int i = 0; i < prediction!.length; i++) {
+      if (prediction[i] > maxScore) {
+        maxScore = prediction[i];
+        maxScoreIndex = i;
+      }
+    }
+    return labels[maxScoreIndex];
+  }
+
+  ///predicts image but returns the raw net output
+  Future<List?> getImagePredictionList(File image, int width, int height,
+      {List<double> mean = TORCHVISION_NORM_MEAN_RGB,
+      List<double> std = TORCHVISION_NORM_STD_RGB}) async {
+    // Assert mean std
+    assert(mean.length == 3, "Mean should have size of 3");
+    assert(std.length == 3, "STD should have size of 3");
+    final List? prediction =
+        await _channel.invokeListMethod("predictImage_ObjectDetection", {
+      "index": _index,
+      "image": image.readAsBytesSync(),
+      "width": width,
+      "height": height,
+      "mean": mean,
+      "std": std
+    });
+    return prediction;
+  }
+
+ */
 }
