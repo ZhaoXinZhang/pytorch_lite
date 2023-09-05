@@ -65,7 +65,7 @@ Run `flutter pub get`
 
 ### Then
 * Go to android/build.gradle
-* Set ```com.android.tools.build:gradle:7.3.0```
+* Set ```com.android.tools.build:gradle:7.1.2```
 ```
 dependencies {
     ...
