@@ -95,6 +95,8 @@ example
     }
 ```
 
+
+
 ### Import the library
 
 ```dart
@@ -154,6 +156,7 @@ final std = [0.5, 0.5, 0.5];
 String prediction = await classificationModel
         .getImagePrediction(image, mean: mean, std: std);
 ```
+
 
 
 #References 
